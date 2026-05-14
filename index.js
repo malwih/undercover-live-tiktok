@@ -67,7 +67,7 @@ const MENTION_EVERYONE =
 const DEBUG_TIKTOK_RAW =
   String(process.env.DEBUG_TIKTOK_RAW || "false").toLowerCase() === "true";
 
-const SERVER_NAME = process.env.SERVER_NAME || "OLENG BEACH";
+const SERVER_NAME = process.env.SERVER_NAME || "UNDERCOVER";
 const LIVE_BG_URL =
   process.env.LIVE_BG_URL ||
   "https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600&auto=format&fit=crop";
@@ -76,9 +76,9 @@ const LIVE_BG_URL =
  * Tetap pakai keyword filter.
  * Pisahkan dengan koma.
  * Contoh:
- * REQUIRED_LIVE_KEYWORDS=oleng beach,ob beach,event oleng
+ * REQUIRED_LIVE_KEYWORDS=undercover,event undercover
  */
-const REQUIRED_LIVE_KEYWORDS = String(process.env.REQUIRED_LIVE_KEYWORDS || "oleng beach")
+const REQUIRED_LIVE_KEYWORDS = String(process.env.REQUIRED_LIVE_KEYWORDS || "undercover")
   .split(",")
   .map((x) => x.trim().toLowerCase())
   .filter(Boolean);
@@ -1672,7 +1672,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const usernameInput = new TextInputBuilder()
           .setCustomId("tiktok_username")
           .setLabel("Masukkan username TikTok")
-          .setPlaceholder("contoh: olengbeachlive")
+          .setPlaceholder("contoh: undercoverlive")
           .setRequired(true)
           .setStyle(TextInputStyle.Short)
           .setMaxLength(50);
