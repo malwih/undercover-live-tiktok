@@ -875,21 +875,38 @@ async function refreshProfileIfNeeded(state, force = false) {
 
 async function fetchTikTokProfileVideos(username) {
   const cleanUsername = normalizeUsername(username);
-  const apiUrl = `https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(cleanUsername)}&count=${VIDEO_SCAN_LIMIT}`;
+
+  const apiUrl =
+    `https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(cleanUsername)}&count=${VIDEO_SCAN_LIMIT}`;
 
   const res = await fetch(apiUrl, {
+    method: "GET",
     headers: {
       "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      accept: "application/json,text/plain,*/*",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      accept: "application/json, text/plain, */*",
+      "accept-language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+      referer: "https://www.tikwm.com/",
+      origin: "https://www.tikwm.com",
+      pragma: "no-cache",
+      "cache-control": "no-cache",
     },
   });
 
+  const rawText = await res.text();
+
   if (!res.ok) {
+    console.warn(`[${cleanUsername}] TikWM raw response:`, rawText.slice(0, 300));
     throw new Error(`TikWM request failed: ${res.status}`);
   }
 
-  const json = await res.json();
+  let json;
+  try {
+    json = JSON.parse(rawText);
+  } catch {
+    console.warn(`[${cleanUsername}] TikWM non-json response:`, rawText.slice(0, 300));
+    return [];
+  }
 
   const list =
     json?.data?.videos ||
