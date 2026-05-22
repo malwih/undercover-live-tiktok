@@ -1585,20 +1585,9 @@ async function sweepTikTokVideos() {
     try {
       const videos = await fetchTikTokProfileVideos(cleanUsername);
 
-      if (!videoBootstrappedUsers.has(cleanUsername)) {
-        for (const video of videos) {
-          videoSeenIds.add(`${cleanUsername}:${video.id}`);
-        }
-
-        videoBootstrappedUsers.add(cleanUsername);
-
-        console.log(
-          `[${cleanUsername}] video bootstrap complete, marked ${videos.length} existing matching videos as seen`
-        );
-
-        await sleep(1200);
-        continue;
-      }
+      console.log(
+        `[${cleanUsername}] video scan found ${videos.length} matching videos`
+      );
 
       const newVideos = videos
         .filter((video) => !videoSeenIds.has(`${cleanUsername}:${video.id}`))
@@ -1608,7 +1597,7 @@ async function sweepTikTokVideos() {
         const key = `${cleanUsername}:${video.id}`;
         videoSeenIds.add(key);
 
-        console.log(`[${cleanUsername}] new matching video detected: ${video.url}`);
+        console.log(`[${cleanUsername}] matching video detected: ${video.url}`);
 
         await sendTikTokVideoAnnouncement(video);
         await sleep(1500);
