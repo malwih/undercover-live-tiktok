@@ -864,122 +864,6 @@ async function createLiveBanner({ username, displayName, avatarUrl }) {
   return canvas.encode("png");
 }
 
-async function createEndLiveBanner({ username, displayName, avatarUrl }) {
-  const width = 1280;
-  const height = 720;
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-
-  const bg = await safeLoadImage(LIVE_BG_URL, width, height, "bg");
-  ctx.drawImage(bg, 0, 0, width, height);
-
-  const overlay = ctx.createLinearGradient(0, 0, 0, height);
-  overlay.addColorStop(0, "rgba(0,0,0,0.30)");
-  overlay.addColorStop(0.55, "rgba(0,0,0,0.55)");
-  overlay.addColorStop(1, "rgba(0,0,0,0.88)");
-  ctx.fillStyle = overlay;
-  ctx.fillRect(0, 0, width, height);
-
-  const grayGlow = ctx.createLinearGradient(0, 0, width, height);
-  grayGlow.addColorStop(0, "rgba(255,255,255,0.05)");
-  grayGlow.addColorStop(1, "rgba(120,120,120,0.14)");
-  ctx.fillStyle = grayGlow;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.10)";
-  ctx.lineWidth = 2;
-  roundRect(ctx, 28, 28, width - 56, height - 56, 28);
-  ctx.stroke();
-  ctx.restore();
-
-  drawBadge(ctx, "LIVE ENDED", 55, 52, "rgba(160,160,160,0.20)");
-
-  ctx.save();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = `36px ${getFontFamily("bold")}`;
-  ctx.fillStyle = "rgba(255,255,255,0.96)";
-  ctx.fillText(SERVER_NAME, width / 2, 56);
-  ctx.restore();
-
-  const avatar = await safeLoadImage(avatarUrl, 512, 512, "avatar");
-  const avatarSize = 220;
-  const avatarX = width / 2 - avatarSize / 2;
-  const avatarY = 132;
-  const avatarCenterX = width / 2;
-  const avatarCenterY = avatarY + avatarSize / 2;
-
-  ctx.save();
-  ctx.shadowColor = "#9ca3af";
-  ctx.shadowBlur = 38;
-  ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarSize / 2 + 12, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarSize / 2, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-  ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
-  ctx.restore();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarSize / 2 + 6, 0, Math.PI * 2);
-  ctx.lineWidth = 10;
-  ctx.strokeStyle = "#ffffff";
-  ctx.stroke();
-  ctx.restore();
-
-  drawCenteredText(ctx, "LIVE ENDED", width / 2, 470, {
-    font: `86px ${getFontFamily("bold")}`,
-    fillStyle: "#ffffff",
-    strokeStyle: "rgba(0,0,0,0.78)",
-    lineWidth: 12,
-  });
-
-  const safeDisplayName = sanitizeText(displayName || username, 32);
-  const nameFont = fitText(ctx, safeDisplayName, 900, 54, 20, "bold");
-  drawCenteredText(ctx, safeDisplayName, width / 2, 555, {
-    font: `${nameFont}px ${getFontFamily("bold")}`,
-    fillStyle: "#f8fafc",
-    strokeStyle: "rgba(0,0,0,0.78)",
-    lineWidth: 8,
-  });
-
-  const handle = `@${sanitizeText(username, 32)}`;
-  const handleFont = fitText(ctx, handle, 700, 32, 18, "regular");
-  drawCenteredText(ctx, handle, width / 2, 610, {
-    font: `${handleFont}px ${getFontFamily("regular")}`,
-    fillStyle: "rgba(255,255,255,0.92)",
-    strokeStyle: "rgba(0,0,0,0.65)",
-    lineWidth: 6,
-  });
-
-  ctx.save();
-  ctx.strokeStyle = "#9ca3af";
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.moveTo(width / 2 - 185, 650);
-  ctx.lineTo(width / 2 + 185, 650);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.save();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `28px ${getFontFamily("regular")}`;
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillText("Live sudah selesai. Sampai jumpa di live berikutnya!", width / 2, 686);
-  ctx.restore();
-
-  return canvas.encode("png");
-}
-
 /* =========================================================
    STATE
 ========================================================= */
@@ -993,7 +877,6 @@ function createState(username) {
     isLive: false,
     isConnecting: false,
     announcedLive: false,
-    endAnnounced: false,
     liveMessageSent: false,
     isSendingLiveAnnouncement: false,
 
@@ -1118,39 +1001,6 @@ function buildLiveEmbed(state) {
   return embed;
 }
 
-function buildEndLiveEmbed(state) {
-  const lines = [
-    `**Nama Profil:** ${state.displayName || state.username}`,
-    `**Username:** [@${state.username}](${getTikTokUrl(state.username)})`,
-    state.roomId ? `**Room ID:** \`${state.roomId}\`` : null,
-    "",
-    "📊 **Rekap Hasil Live**",
-    `**Mulai Live:** ${state.sessionStartAt ? `${fmtDateID(state.sessionStartAt)} WIB` : "-"}`,
-    `**Selesai Live:** ${state.sessionEndAt ? `${fmtDateID(state.sessionEndAt)} WIB` : "-"}`,
-    `**Durasi Live:** ${fmtDuration(state.sessionStartAt, state.sessionEndAt)}`,
-    `**Viewer Terakhir:** ${fmtNumber(state.lastKnownViewers)}`,
-    `**Peak Viewer:** ${fmtNumber(state.peakViewers)}`,
-    `**Total Like:** ${fmtNumber(state.totalLikes)}`,
-    `**Diamond:** ${fmtNumber(state.diamonds)}`,
-    "",
-    "Live barusan sudah berakhir.",
-  ].filter(Boolean);
-
-  const embed = new EmbedBuilder()
-    .setColor(0x9ca3af)
-    .setTitle("⏹️ TikTok LIVE Selesai")
-    .setDescription(lines.join("\n"))
-    .setURL(getTikTokUrl(state.username))
-    .setFooter({ text: `Ended at ${fmtDateID(nowIso())} WIB` })
-    .setTimestamp();
-
-  if (state.avatarUrl) {
-    embed.setThumbnail(state.avatarUrl);
-  }
-
-  return embed;
-}
-
 function buildButtons(state) {
   return [
     new ActionRowBuilder().addComponents(
@@ -1231,46 +1081,12 @@ async function sendLiveAnnouncement(state) {
   return true;
 }
 
-async function sendEndLiveAnnouncement(state) {
-  const channel = await getAnnounceChannel();
-
-  await refreshProfileIfNeeded(state, false);
-  state.sessionEndAt = state.sessionEndAt || nowIso();
-
-  const bannerBuffer = await createEndLiveBanner({
-    username: state.username,
-    displayName: state.displayName || state.username,
-    avatarUrl: state.avatarUrl,
-  });
-
-  const bannerAttachment = new AttachmentBuilder(bannerBuffer, {
-    name: `tiktok-ended-${state.username}-${Date.now()}.png`,
-  });
-
-  await sendAndPublish(channel, {
-    content:
-      `⏹️ **${state.displayName || state.username}** sudah selesai LIVE di TikTok.\n\n` +
-      `📊 **Rekap Live**\n` +
-      `• Durasi: ${fmtDuration(state.sessionStartAt, state.sessionEndAt)}\n` +
-      `• Viewer terakhir: ${fmtNumber(state.lastKnownViewers)}\n` +
-      `• Peak viewer: ${fmtNumber(state.peakViewers)}\n` +
-      `• Total like: ${fmtNumber(state.totalLikes)}\n` +
-      `• Diamond: ${fmtNumber(state.diamonds)}`,
-    files: [bannerAttachment],
-    embeds: [buildEndLiveEmbed(state)],
-    components: buildButtons(state),
-  });
-
-  return true;
-}
-
 function resetLiveFlagsAfterEnd(state) {
   state.isLive = false;
   state.isConnecting = false;
   state.announcedLive = false;
   state.liveMessageSent = false;
   state.isSendingLiveAnnouncement = false;
-  state.endAnnounced = false;
 
   state.roomId = null;
   state.viewers = null;
@@ -1322,28 +1138,6 @@ async function announceLiveIfNeeded(state) {
   }
 }
 
-async function announceEndIfNeeded(state) {
-  if (state.endAnnounced) return;
-
-  const canSendEndAnnouncement =
-    state.liveMessageSent || state.announcedLive || !!state.activeSessionId || !!state.sessionStartAt;
-
-  if (!canSendEndAnnouncement) {
-    console.log(`[${state.username}] end not sent because no active live session was recorded`);
-    return;
-  }
-
-  try {
-    const sent = await sendEndLiveAnnouncement(state);
-    if (!sent) return;
-
-    state.endAnnounced = true;
-    console.log(`[${state.username}] end announcement sent`);
-  } catch (err) {
-    console.error(`[${state.username}] failed end announcement:`, err);
-  }
-}
-
 /* =========================================================
    TIKTOK EVENTS
 ========================================================= */
@@ -1362,8 +1156,6 @@ function bindTikTokEvents(state) {
     if (!state.sessionStartAt) {
       resetSessionMetrics(state);
     }
-
-    state.endAnnounced = false;
 
     extractProfileFromAny(state, connState);
 
@@ -1410,8 +1202,6 @@ function bindTikTokEvents(state) {
 
   conn.on(WebcastEvent.STREAM_END, async ({ action }) => {
     console.log(`[${username}] STREAM_END action=${action}`);
-    state.sessionEndAt = nowIso();
-    await announceEndIfNeeded(state);
     resetLiveFlagsAfterEnd(state);
   });
 }
@@ -1465,9 +1255,7 @@ async function handlePolledOffline(state) {
     return;
   }
 
-  console.log(`[${state.username}] confirmed offline, sending end announcement`);
-  state.sessionEndAt = nowIso();
-  await announceEndIfNeeded(state);
+  console.log(`[${state.username}] confirmed offline, resetting live state`);
   resetLiveFlagsAfterEnd(state);
 }
 
@@ -1481,8 +1269,6 @@ async function handlePolledLive(state) {
   if (!state.sessionStartAt) {
     resetSessionMetrics(state);
   }
-
-  state.endAnnounced = false;
 
   await refreshProfileIfNeeded(state, false);
   await announceLiveIfNeeded(state);
