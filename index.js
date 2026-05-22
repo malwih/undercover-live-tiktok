@@ -72,35 +72,15 @@ const LIVE_BG_URL =
   process.env.LIVE_BG_URL ||
   "https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600&auto=format&fit=crop";
 
+/**
+ * Tetap pakai keyword filter.
+ * Pisahkan dengan koma.
+ * Contoh:
+ * REQUIRED_LIVE_KEYWORDS=undercover,event undercover
+ */
 const REQUIRED_LIVE_KEYWORDS = String(process.env.REQUIRED_LIVE_KEYWORDS || "undercover")
   .split(",")
   .map((x) => x.trim().toLowerCase())
-  .filter(Boolean);
-
-/**
- * Fitur auto share video TikTok.
- * Bot akan cek postingan dari TIKTOK_USERNAMES.
- * Kalau caption / metadata video mengandung hashtag atau mention ini,
- * video akan dibagikan ke LIVE_ANNOUNCE_CHANNEL_ID.
- */
-const VIDEO_POLL_INTERVAL_SECONDS = Number(
-  process.env.VIDEO_POLL_INTERVAL_SECONDS || 180
-);
-
-const VIDEO_SCAN_LIMIT = Number(process.env.VIDEO_SCAN_LIMIT || 12);
-
-const VIDEO_REQUIRED_HASHTAGS = String(
-  process.env.VIDEO_REQUIRED_HASHTAGS || "undercoversociety"
-)
-  .split(",")
-  .map((x) => x.trim().replace(/^#/, "").toLowerCase())
-  .filter(Boolean);
-
-const VIDEO_REQUIRED_MENTIONS = String(
-  process.env.VIDEO_REQUIRED_MENTIONS || "undercover.society"
-)
-  .split(",")
-  .map((x) => x.trim().replace(/^@/, "").toLowerCase())
   .filter(Boolean);
 
 if (!DISCORD_TOKEN) throw new Error("Missing DISCORD_TOKEN");
@@ -121,8 +101,6 @@ const client = new Client({
    GLOBAL STATE
 ========================================================= */
 const liveStates = new Map();
-const videoSeenIds = new Set();
-const videoBootstrappedUsers = new Set();
 
 /* =========================================================
    HELPERS
@@ -164,10 +142,6 @@ function getTikTokUrl(username) {
 
 function getTikTokProfileUrl(username) {
   return `https://www.tiktok.com/@${username}`;
-}
-
-function getTikTokVideoUrl(username, videoId) {
-  return `https://www.tiktok.com/@${username}/video/${videoId}`;
 }
 
 function getFontFamily(weight = "regular") {
@@ -228,7 +202,6 @@ function pickFirstUrl(...candidates) {
       if (found) return found.trim();
     }
   }
-
   return null;
 }
 
@@ -302,187 +275,6 @@ function matchesRequiredKeyword(state) {
   if (!REQUIRED_LIVE_KEYWORDS.length) return true;
 
   return REQUIRED_LIVE_KEYWORDS.some((keyword) => text.includes(keyword));
-}
-
-/* =========================================================
-   VIDEO MATCHING HELPERS
-========================================================= */
-function textMatchesVideoRule(text = "") {
-  const value = normalizeSpace(text).toLowerCase();
-
-  const hashtagMatched = VIDEO_REQUIRED_HASHTAGS.some((tag) => {
-    const clean = tag.replace(/^#/, "").toLowerCase();
-    return value.includes(`#${clean}`) || value.includes(clean);
-  });
-
-  const mentionMatched = VIDEO_REQUIRED_MENTIONS.some((mention) => {
-    const clean = mention.replace(/^@/, "").toLowerCase();
-    return value.includes(`@${clean}`) || value.includes(clean);
-  });
-
-  return hashtagMatched || mentionMatched;
-}
-
-function extractVideoCover(videoLike) {
-  return normalizeImageUrl(
-    pickFirstUrl(
-      videoLike?.video?.cover,
-      videoLike?.video?.originCover,
-      videoLike?.video?.dynamicCover,
-      videoLike?.video?.cover?.urlList,
-      videoLike?.video?.originCover?.urlList,
-      videoLike?.video?.dynamicCover?.urlList,
-      videoLike?.cover,
-      videoLike?.originCover,
-      videoLike?.dynamicCover,
-      videoLike?.cover?.urlList,
-      videoLike?.originCover?.urlList,
-      videoLike?.dynamicCover?.urlList
-    )
-  );
-}
-
-function extractVideoAuthor(videoLike) {
-  return normalizeUsername(
-    pickFirstString(
-      videoLike?.author?.uniqueId,
-      videoLike?.author?.unique_id,
-      videoLike?.authorInfo?.uniqueId,
-      videoLike?.authorInfo?.unique_id,
-      videoLike?.authorStats?.uniqueId,
-      videoLike?.authorStats?.unique_id,
-      videoLike?.author?.nickname,
-      videoLike?.authorInfo?.nickname
-    )
-  );
-}
-
-function extractVideoText(videoLike) {
-  const desc = pickFirstString(
-    videoLike?.desc,
-    videoLike?.description,
-    videoLike?.title,
-    videoLike?.shareInfo?.shareTitle,
-    videoLike?.shareInfo?.shareDesc
-  );
-
-  const extraText = [];
-
-  const textExtra = videoLike?.textExtra || videoLike?.text_extra;
-  if (Array.isArray(textExtra)) {
-    for (const item of textExtra) {
-      const hashtag = pickFirstString(
-        item?.hashtagName,
-        item?.hashtag_name,
-        item?.hashtag?.name
-      );
-
-      const user = pickFirstString(
-        item?.userUniqueId,
-        item?.user_unique_id,
-        item?.userId,
-        item?.user_id
-      );
-
-      if (hashtag) extraText.push(`#${hashtag}`);
-      if (user) extraText.push(`@${user}`);
-    }
-  }
-
-  return normalizeSpace([desc, ...extraText].filter(Boolean).join(" "));
-}
-
-function walkObject(value, callback, seen = new WeakSet()) {
-  if (!value || typeof value !== "object") return;
-  if (seen.has(value)) return;
-
-  seen.add(value);
-  callback(value);
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      walkObject(item, callback, seen);
-    }
-    return;
-  }
-
-  for (const item of Object.values(value)) {
-    walkObject(item, callback, seen);
-  }
-}
-
-function parseTikTokVideosFromHtml({ html, username }) {
-  const cleanUsername = normalizeUsername(username);
-  const videos = new Map();
-
-  const scriptMatches = [
-    ...html.matchAll(
-      /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">(.*?)<\/script>/gs
-    ),
-    ...html.matchAll(
-      /<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/gs
-    ),
-  ];
-
-  for (const match of scriptMatches) {
-    if (!match?.[1]) continue;
-
-    try {
-      const data = JSON.parse(match[1]);
-
-      walkObject(data, (obj) => {
-        const videoId = pickFirstString(
-          obj?.id,
-          obj?.awemeId,
-          obj?.aweme_id,
-          obj?.itemId,
-          obj?.item_id
-        );
-
-        if (!videoId || !/^\d{8,}$/.test(String(videoId))) return;
-
-        const author = extractVideoAuthor(obj);
-        if (author && author !== cleanUsername) return;
-
-        const text = extractVideoText(obj);
-        if (!textMatchesVideoRule(text)) return;
-
-        const createTimeRaw =
-          obj?.createTime ??
-          obj?.create_time ??
-          obj?.createTimestamp ??
-          obj?.create_timestamp ??
-          null;
-
-        const createTime =
-          createTimeRaw != null && !Number.isNaN(Number(createTimeRaw))
-            ? Number(createTimeRaw)
-            : null;
-
-        const stats = obj?.stats || obj?.statistics || obj?.statsV2 || {};
-
-        videos.set(String(videoId), {
-          id: String(videoId),
-          username: cleanUsername,
-          url: getTikTokVideoUrl(cleanUsername, videoId),
-          text,
-          coverUrl: extractVideoCover(obj),
-          createTime,
-          likes: stats?.diggCount ?? stats?.likeCount ?? stats?.digg_count ?? null,
-          comments:
-            stats?.commentCount ?? stats?.comment_count ?? stats?.comment ?? null,
-          shares: stats?.shareCount ?? stats?.share_count ?? stats?.share ?? null,
-          plays: stats?.playCount ?? stats?.play_count ?? stats?.play ?? null,
-        });
-      });
-    } catch (err) {
-      console.warn(`[${username}] failed parsing TikTok video json:`, err?.message || err);
-    }
-  }
-
-  return [...videos.values()]
-    .sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0))
-    .slice(0, VIDEO_SCAN_LIMIT);
 }
 
 /* =========================================================
@@ -873,123 +665,6 @@ async function refreshProfileIfNeeded(state, force = false) {
   }
 }
 
-async function fetchTikTokProfileVideos(username) {
-  const cleanUsername = normalizeUsername(username);
-
-  const apiUrl =
-    `https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(cleanUsername)}&count=${VIDEO_SCAN_LIMIT}`;
-
-  const res = await fetch(apiUrl, {
-    method: "GET",
-    headers: {
-      "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      accept: "application/json, text/plain, */*",
-      "accept-language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-      referer: "https://www.tikwm.com/",
-      origin: "https://www.tikwm.com",
-      pragma: "no-cache",
-      "cache-control": "no-cache",
-    },
-  });
-
-  const rawText = await res.text();
-
-  if (!res.ok) {
-    console.warn(`[${cleanUsername}] TikWM raw response:`, rawText.slice(0, 300));
-    throw new Error(`TikWM request failed: ${res.status}`);
-  }
-
-  let json;
-  try {
-    json = JSON.parse(rawText);
-  } catch {
-    console.warn(`[${cleanUsername}] TikWM non-json response:`, rawText.slice(0, 300));
-    return [];
-  }
-
-  const list =
-    json?.data?.videos ||
-    json?.data?.videoList ||
-    json?.data?.aweme_list ||
-    [];
-
-  if (!Array.isArray(list)) {
-    console.log(`[${cleanUsername}] TikWM response has no video list`);
-    return [];
-  }
-
-  const videos = [];
-
-  for (const item of list) {
-    const videoId = pickFirstString(
-      item?.video_id,
-      item?.aweme_id,
-      item?.id,
-      item?.id_str
-    );
-
-    if (!videoId) continue;
-
-    const text = normalizeSpace(
-      [
-        item?.title,
-        item?.desc,
-        item?.description,
-        item?.caption,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    );
-
-    if (!textMatchesVideoRule(text)) continue;
-
-    const createTimeRaw =
-      item?.create_time ??
-      item?.createTime ??
-      item?.ctime ??
-      null;
-
-    const createTime =
-      createTimeRaw != null && !Number.isNaN(Number(createTimeRaw))
-        ? Number(createTimeRaw)
-        : null;
-
-    const videoUrl =
-      item?.share_url ||
-      item?.shareUrl ||
-      item?.url ||
-      getTikTokVideoUrl(cleanUsername, videoId);
-
-    videos.push({
-      id: String(videoId),
-      username: cleanUsername,
-      url: videoUrl,
-      text,
-      coverUrl: normalizeImageUrl(
-        pickFirstUrl(
-          item?.cover,
-          item?.origin_cover,
-          item?.dynamic_cover,
-          item?.ai_dynamic_cover,
-          item?.video?.cover,
-          item?.video?.origin_cover,
-          item?.video?.dynamic_cover
-        )
-      ),
-      createTime,
-      likes: item?.digg_count ?? item?.like_count ?? item?.stats?.diggCount ?? null,
-      comments: item?.comment_count ?? item?.stats?.commentCount ?? null,
-      shares: item?.share_count ?? item?.stats?.shareCount ?? null,
-      plays: item?.play_count ?? item?.stats?.playCount ?? null,
-    });
-  }
-
-  return videos
-    .sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0))
-    .slice(0, VIDEO_SCAN_LIMIT);
-}
-
 /* =========================================================
    IMAGE HELPERS
 ========================================================= */
@@ -1341,53 +1016,6 @@ function buildButtons(state) {
   ];
 }
 
-function buildVideoEmbed(video) {
-  const lines = [
-    `**Akun:** [@${video.username}](${getTikTokProfileUrl(video.username)})`,
-    `**Link Video:** ${video.url}`,
-    video.createTime ? `**Diposting:** ${fmtDateID(video.createTime * 1000)} WIB` : null,
-    video.plays != null ? `**Views:** ${fmtNumber(video.plays)}` : null,
-    video.likes != null ? `**Like:** ${fmtNumber(video.likes)}` : null,
-    video.comments != null ? `**Comment:** ${fmtNumber(video.comments)}` : null,
-    video.shares != null ? `**Share:** ${fmtNumber(video.shares)}` : null,
-    "",
-    "**Caption / Tag Terdeteksi:**",
-    video.text ? sanitizeText(video.text, 220) : "-",
-    "",
-    "Yuk bantu ramaikan postingan ini!",
-    "Klik tombol di bawah, lalu **like, comment, share** videonya.",
-  ].filter(Boolean);
-
-  const embed = new EmbedBuilder()
-    .setColor(0xfe2c55)
-    .setTitle("🎬 Video TikTok Baru Terdeteksi")
-    .setDescription(lines.join("\n"))
-    .setURL(video.url)
-    .setFooter({ text: `Detected at ${fmtDateID(nowIso())} WIB` })
-    .setTimestamp();
-
-  if (video.coverUrl) {
-    embed.setImage(video.coverUrl);
-  }
-
-  return embed;
-}
-
-function buildVideoButtons(video) {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel("🎬 Buka Video TikTok")
-        .setStyle(ButtonStyle.Link)
-        .setURL(video.url),
-      new ButtonBuilder()
-        .setLabel("👤 Buka Profil")
-        .setStyle(ButtonStyle.Link)
-        .setURL(getTikTokProfileUrl(video.username))
-    ),
-  ];
-}
-
 /* =========================================================
    ANNOUNCE CHANNEL
 ========================================================= */
@@ -1453,25 +1081,6 @@ async function sendLiveAnnouncement(state) {
   return true;
 }
 
-async function sendTikTokVideoAnnouncement(video) {
-  const channel = await getAnnounceChannel();
-
-  const content =
-    `🚨 @everyone\n` +
-    `🎬 **@${video.username} baru posting video TikTok!**\n\n` +
-    `Mohon bantu ramaikan postingan ini dengan **LIKE, COMMENT, dan SHARE** ya!\n` +
-    `${video.url}`;
-
-  await sendAndPublish(channel, {
-    content,
-    embeds: [buildVideoEmbed(video)],
-    components: buildVideoButtons(video),
-    allowedMentions: { parse: ["everyone"] },
-  });
-
-  return true;
-}
-
 function resetLiveFlagsAfterEnd(state) {
   state.isLive = false;
   state.isConnecting = false;
@@ -1530,7 +1139,7 @@ async function announceLiveIfNeeded(state) {
 }
 
 /* =========================================================
-   TIKTOK LIVE EVENTS
+   TIKTOK EVENTS
 ========================================================= */
 function bindTikTokEvents(state) {
   const { conn, username } = state;
@@ -1626,7 +1235,7 @@ async function connectToLiveRoomIfNeeded(state) {
 }
 
 /* =========================================================
-   LIVE POLLING
+   POLLING
 ========================================================= */
 async function handlePolledOffline(state) {
   state.offlineTicks += 1;
@@ -1683,41 +1292,6 @@ async function sweepTikTokLives() {
       await sleep(1200);
     } catch (err) {
       console.warn(`[${username}] fetchIsLive failed:`, err?.message || err);
-    }
-  }
-}
-
-/* =========================================================
-   VIDEO POLLING
-========================================================= */
-async function sweepTikTokVideos() {
-  for (const username of TIKTOK_USERNAMES) {
-    const cleanUsername = normalizeUsername(username);
-
-    try {
-      const videos = await fetchTikTokProfileVideos(cleanUsername);
-
-      console.log(
-        `[${cleanUsername}] video scan found ${videos.length} matching videos`
-      );
-
-      const newVideos = videos
-        .filter((video) => !videoSeenIds.has(`${cleanUsername}:${video.id}`))
-        .sort((a, b) => Number(a.createTime || 0) - Number(b.createTime || 0));
-
-      for (const video of newVideos) {
-        const key = `${cleanUsername}:${video.id}`;
-        videoSeenIds.add(key);
-
-        console.log(`[${cleanUsername}] matching video detected: ${video.url}`);
-
-        await sendTikTokVideoAnnouncement(video);
-        await sleep(1500);
-      }
-
-      await sleep(1200);
-    } catch (err) {
-      console.warn(`[${cleanUsername}] sweepTikTokVideos failed:`, err?.message || err);
     }
   }
 }
@@ -2095,7 +1669,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 /* =========================================================
    STARTUP
 ========================================================= */
-client.once(Events.ClientReady, async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   console.log(`Monitoring: ${TIKTOK_USERNAMES.join(", ")}`);
   console.log(`STAFF_ROLE_ID: ${STAFF_ROLE_ID}`);
@@ -2105,10 +1679,6 @@ client.once(Events.ClientReady, async () => {
   console.log(`PROFILE_REFRESH_COOLDOWN_MS: ${PROFILE_REFRESH_COOLDOWN_MS}`);
   console.log(`REQUIRED_LIVE_KEYWORDS: ${REQUIRED_LIVE_KEYWORDS.join(", ") || "-"}`);
   console.log(`DEBUG_TIKTOK_RAW: ${DEBUG_TIKTOK_RAW}`);
-  console.log(`VIDEO_POLL_INTERVAL_SECONDS: ${VIDEO_POLL_INTERVAL_SECONDS}`);
-  console.log(`VIDEO_SCAN_LIMIT: ${VIDEO_SCAN_LIMIT}`);
-  console.log(`VIDEO_REQUIRED_HASHTAGS: ${VIDEO_REQUIRED_HASHTAGS.join(", ") || "-"}`);
-  console.log(`VIDEO_REQUIRED_MENTIONS: ${VIDEO_REQUIRED_MENTIONS.join(", ") || "-"}`);
 
   try {
     await getAnnounceChannel();
@@ -2119,7 +1689,6 @@ client.once(Events.ClientReady, async () => {
   }
 
   await sweepTikTokLives();
-  await sweepTikTokVideos();
 
   setInterval(async () => {
     try {
@@ -2128,14 +1697,6 @@ client.once(Events.ClientReady, async () => {
       console.error("sweepTikTokLives error:", err);
     }
   }, POLL_INTERVAL_SECONDS * 1000).unref();
-
-  setInterval(async () => {
-    try {
-      await sweepTikTokVideos();
-    } catch (err) {
-      console.error("sweepTikTokVideos error:", err);
-    }
-  }, VIDEO_POLL_INTERVAL_SECONDS * 1000).unref();
 });
 
 client.login(DISCORD_TOKEN);
