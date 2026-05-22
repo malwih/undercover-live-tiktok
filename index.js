@@ -874,8 +874,103 @@ async function refreshProfileIfNeeded(state, force = false) {
 }
 
 async function fetchTikTokProfileVideos(username) {
-  const html = await fetchText(getTikTokProfileUrl(username));
-  return parseTikTokVideosFromHtml({ html, username });
+  const cleanUsername = normalizeUsername(username);
+  const apiUrl = `https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(cleanUsername)}&count=${VIDEO_SCAN_LIMIT}`;
+
+  const res = await fetch(apiUrl, {
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      accept: "application/json,text/plain,*/*",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`TikWM request failed: ${res.status}`);
+  }
+
+  const json = await res.json();
+
+  const list =
+    json?.data?.videos ||
+    json?.data?.videoList ||
+    json?.data?.aweme_list ||
+    [];
+
+  if (!Array.isArray(list)) {
+    console.log(`[${cleanUsername}] TikWM response has no video list`);
+    return [];
+  }
+
+  const videos = [];
+
+  for (const item of list) {
+    const videoId = pickFirstString(
+      item?.video_id,
+      item?.aweme_id,
+      item?.id,
+      item?.id_str
+    );
+
+    if (!videoId) continue;
+
+    const text = normalizeSpace(
+      [
+        item?.title,
+        item?.desc,
+        item?.description,
+        item?.caption,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+    if (!textMatchesVideoRule(text)) continue;
+
+    const createTimeRaw =
+      item?.create_time ??
+      item?.createTime ??
+      item?.ctime ??
+      null;
+
+    const createTime =
+      createTimeRaw != null && !Number.isNaN(Number(createTimeRaw))
+        ? Number(createTimeRaw)
+        : null;
+
+    const videoUrl =
+      item?.share_url ||
+      item?.shareUrl ||
+      item?.url ||
+      getTikTokVideoUrl(cleanUsername, videoId);
+
+    videos.push({
+      id: String(videoId),
+      username: cleanUsername,
+      url: videoUrl,
+      text,
+      coverUrl: normalizeImageUrl(
+        pickFirstUrl(
+          item?.cover,
+          item?.origin_cover,
+          item?.dynamic_cover,
+          item?.ai_dynamic_cover,
+          item?.video?.cover,
+          item?.video?.origin_cover,
+          item?.video?.dynamic_cover
+        )
+      ),
+      createTime,
+      likes: item?.digg_count ?? item?.like_count ?? item?.stats?.diggCount ?? null,
+      comments: item?.comment_count ?? item?.stats?.commentCount ?? null,
+      shares: item?.share_count ?? item?.stats?.shareCount ?? null,
+      plays: item?.play_count ?? item?.stats?.playCount ?? null,
+    });
+  }
+
+  return videos
+    .sort((a, b) => Number(b.createTime || 0) - Number(a.createTime || 0))
+    .slice(0, VIDEO_SCAN_LIMIT);
 }
 
 /* =========================================================
